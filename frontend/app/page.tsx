@@ -5,6 +5,8 @@ import { TrendingUp, Users, Package, Network } from 'lucide-react';
 import { StatCard, Card, LoadingSpinner, ErrorAlert } from '@/components/ui';
 import * as api from '@/services/api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { formatNumber, formatCurrency } from '@/utils/utils'; '@/utils/utils';
+
 
 export default function Dashboard() {
   const [stats, setStats] = useState<any>(null);
@@ -72,17 +74,17 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Customers"
-          value={stats?.graphStats?.customer_count || 0}
+          value={formatNumber(stats?.graphStats?.customer_count || 0)}
           icon={<Users className="text-primary-400" size={24} />}
         />
         <StatCard
           label="Total Products"
-          value={stats?.graphStats?.product_count || 0}
+          value={formatNumber(stats?.graphStats?.product_count || 0)}
           icon={<Package className="text-accent-400" size={24} />}
         />
         <StatCard
           label="Total Relationships"
-          value={stats?.graphStats?.relationship_count || 0}
+          value={formatNumber(stats?.graphStats?.relationship_count || 0)}
           icon={<Network className="text-green-400" size={24} />}
         />
         <StatCard

@@ -524,19 +524,33 @@ def get_segment_customers(segment_id: int, limit: int = 20) -> list[dict]:
 @timed_cache(ttl=300)
 def get_category_insights() -> list[dict]:
     cypher = """
-    MATCH (p:Product)
-    WITH p.category AS category
-    OPTIONAL MATCH (c:Customer)-[r:PURCHASED]->(p2:Product)
-    WHERE p2.category = category
-    OPTIONAL MATCH ()-[rev:REVIEWED]->(p2)
-    WITH category, p2, r, rev
+    // Étape 1 : stats d'achat par catégorie
+    MATCH (c:Customer)-[r:PURCHASED]->(p:Product)
+    WITH
+        p.category                                        AS category,
+        count(r)                                          AS purchase_count,
+        count(DISTINCT p)                                 AS product_count,
+        sum(coalesce(r.price_at_purchase, p.price, 0)
+            * coalesce(r.quantity, 1))                    AS total_revenue
+
+    // Étape 2 : note moyenne (sous-requête séparée pour éviter la jointure croisée)
+    CALL {
+        WITH category
+        MATCH (:Customer)-[rev:REVIEWED]->(p2:Product {category: category})
+        RETURN
+            round(avg(rev.rating), 2) AS avg_rating,
+            count(rev)                AS total_reviews
+    }
+
     RETURN
         category,
-        COUNT(DISTINCT p2) AS product_count,
-        COUNT(r) AS purchase_count,
-        ROUND(SUM(COALESCE(r.quantity, 1) * COALESCE(p2.price, 0)), 2) AS total_revenue,
-        ROUND(COALESCE(AVG(rev.rating), 4.5), 2) AS avg_rating
+        product_count,
+        purchase_count,
+        round(total_revenue, 2)                   AS total_revenue,
+        coalesce(avg_rating, 0.0)                 AS avg_rating,
+        total_reviews
     ORDER BY purchase_count DESC
+    LIMIT 2000
     """
     return _clean(db.query(cypher))
 

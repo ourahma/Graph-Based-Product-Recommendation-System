@@ -4,7 +4,8 @@ import React, { useEffect, useState } from 'react';
 import { Users, TrendingUp, Package, Search, Filter } from 'lucide-react';
 import { Card, LoadingSpinner, ErrorAlert, StatCard, Badge } from '@/components/ui';
 import * as api from '@/services/api';
-
+import { formatNumber, formatCurrency } from "@/utils/utils";
+("@/utils/utils");
 interface Customer {
   client_id: string;
   name: string;
@@ -94,17 +95,17 @@ export default function CustomersPage() {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Unique Customers"
-          value={statsData.unique_customer_ids || customers.length || 0}
+          value={formatNumber(statsData.unique_customer_ids || customers.length || 0)}
           icon={<Users className="text-primary-400" size={24} />}
         />
         <StatCard
           label="Customers with Purchases"
-          value={customersWithPurchases}
+          value={formatNumber(customersWithPurchases)}
           icon={<TrendingUp className="text-accent-400" size={24} />}
         />
         <StatCard
           label="Total Purchases"
-          value={statsData.total_purchases || 0}
+          value={formatNumber(statsData.total_purchases || 0)}
           icon={<Package className="text-green-400" size={24} />}
         />
         <StatCard

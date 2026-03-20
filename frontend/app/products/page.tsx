@@ -30,7 +30,7 @@ export default function ProductsPage() {
         setError(null);
 
         // Fetch products from diagnostic endpoint
-        const productsRes = await api.getDiagnosticProducts(200);
+        const productsRes = await api.getDiagnosticProducts(500);
         
         const productsList = (productsRes.data?.products || []).map((p: any, idx: number) => ({
           product_id: p.product_id || String(idx),

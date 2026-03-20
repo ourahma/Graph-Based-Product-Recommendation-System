@@ -74,7 +74,7 @@ export const getDiagnosticGraphs = () =>
 export const getDiagnosticClient = (clientId: string) =>
   api.get(`${API_PREFIX}/algorithms/diagnose/client/${clientId}`);
 
-export const getDiagnosticProducts = (limit: number = 100) =>
+export const getDiagnosticProducts = (limit: number = 500) =>
   api.get(`${API_PREFIX}/algorithms/diagnose/products`, { params: { limit } });
 
 export default api;

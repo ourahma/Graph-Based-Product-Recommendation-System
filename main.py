@@ -10,6 +10,8 @@ import os
 from dotenv import load_dotenv
 
 from routers import recommendations, customers, analytics, algorithms
+from scripts.fix_distributions import fix_purchases_distribution
+from scripts.seed_purchases import seed_missing_purchases
 
 load_dotenv()
 
@@ -54,6 +56,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["*"],
+    allow_credentials=True,
     allow_headers=["*"],
 )
 
@@ -96,10 +99,16 @@ def root():
 
 # ── Démarrage ──────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        "main:app",
-        host=os.getenv("APP_HOST", "0.0.0.0"),
-        port=int(os.getenv("APP_PORT", 8000)),
-        reload=True,
+    seed_missing_purchases(
+        batch_size=900,    
+        coverage_pct=0.40,   # 60% des clients sans achats en recevront
+                             
     )
+    # import uvicorn
+    # uvicorn.run(
+    #     "main:app",
+    #     host="0.0.0.0",
+    #     port=int(os.getenv("APP_PORT", 8000)),
+    #     reload=True,
+    # )
+    

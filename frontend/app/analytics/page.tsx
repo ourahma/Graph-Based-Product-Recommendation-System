@@ -5,7 +5,8 @@ import { BarChart3, TrendingUp, PieChart as PieChartIcon } from 'lucide-react';
 import { Card, LoadingSpinner, ErrorAlert, StatCard } from '@/components/ui';
 import * as api from '@/services/api';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-
+import { formatNumber, formatCurrency } from "@/utils/utils";
+("@/utils/utils");
 const COLORS = ['#0ea5e9', '#a855f7', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
 export default function Analytics() {
@@ -157,7 +158,7 @@ export default function Analytics() {
                     {category?.purchase_count || 0}
                   </td>
                   <td className="px-6 py-4 text-sm text-green-400 font-semibold">
-                    ${(category?.total_revenue || 0).toFixed(2)}
+                    ${(formatCurrency(category?.total_revenue || 0))}
                   </td>
                   <td className="px-6 py-4 text-sm text-yellow-400 font-semibold">
                     {(category?.avg_rating || 4.5).toFixed(1)} ⭐
@@ -174,8 +175,8 @@ export default function Analytics() {
         <h2 className="mb-6 text-xl font-bold text-white">📈 Graph Database Metrics</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: 'Total Nodes', value: graphStats?.total_nodes || 0 },
-            { label: 'Total Relationships', value: graphStats?.relationship_count || 0 },
+            { label: 'Total Nodes', value: formatNumber(graphStats?.total_nodes || 0 )},
+            { label: 'Total Relationships', value: formatNumber(graphStats?.relationship_count || 0 )},
             { label: 'Graph Diameter', value: graphStats?.diameter || 0 },
             { label: 'Avg Shortest Path', value: (graphStats?.avg_shortest_path || 0).toFixed(2) },
           ].map((stat, idx) => (

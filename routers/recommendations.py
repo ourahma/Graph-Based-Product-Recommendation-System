@@ -152,7 +152,6 @@ def all_similar_clients(
         MATCH (c2:Customer) WHERE id(c2) = node2
         
         RETURN
-            // ✅ Field names matching frontend expectations
             c1.client_id    AS customer1_id,
             c1.name         AS name_1,
             c1.community    AS community1_id,

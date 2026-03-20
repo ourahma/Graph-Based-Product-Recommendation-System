@@ -1,7 +1,3 @@
-"""
-services/gds.py - version stream (aucune relation créée en base)
-Utilise uniquement PURCHASED et REVIEWED existants.
-"""
 from config.database import db
 import logging
 import math
@@ -182,7 +178,7 @@ def create_product_projection(customer_ids: list, product_ids: list, all_ids: li
 
 
 # ─────────────────────────────────────────────
-# ALGORITHMES — écriture propriétés uniquement
+# ALGORITHMES 
 # ─────────────────────────────────────────────
 
 def run_pagerank() -> Dict[str, Any]:
@@ -228,7 +224,7 @@ def run_betweenness() -> Dict[str, Any]:
 
 
 # ─────────────────────────────────────────────
-# STREAM SIMILARITÉ (aucune relation écrite)
+# STREAM SIMILARITÉ 
 # ─────────────────────────────────────────────
 def stream_similar_customers(customer_neo4j_id: int, top_k: int = 10) -> list[dict]:
     try:
