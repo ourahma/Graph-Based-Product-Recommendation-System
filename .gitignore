@@ -1,0 +1,142 @@
+# Backend - Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Backend - Virtual Environment
+.venv/
+venv/
+
+# Backend - Environment variables
+.env
+.env.local
+.env.*.local
+
+# Frontend - Node modules
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Frontend - Build outputs
+.next/
+out/
+build/
+dist/
+
+# Frontend - Environment variables
+.env.local
+.env.*.local
+
+# Frontend - Cache
+.eslintcache
+.stylelintcache
+
+# IDE and Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.sublime-workspace
+*.sublime-project
+
+# OS specific
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+lerna-debug.log*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# IDE
+.vscode
+.idea
+*.code-workspace
+
+# MacOS
+.AppleDouble
+.LSOverride
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# pyenv
+.python-version
+
+# Misc files
+*.pdf
+*.tar
+*.gz
+*.zip
+frontend.tar
+
+BACKEND_DOCUMENTATION.md
+CYPHER_QUERIES_COMPLETE.md
+test_algorithms.py
+test_api_endpoints.py
+test_neo4j_connection.py
+SETUP_GUIDE.md
+/frontend/FRONTEND_DOCUMENTATION.md
+/frontend/ARCHITECTURE.md
+/frontend/CREATED.md
+/frontend/INTEGRATION.md
+/frontend/QUICKSTART.md
+/frontend/PREVIEW.md

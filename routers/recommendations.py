@@ -10,8 +10,10 @@ from services.recommendation import (
     recommend_for_product,
     get_top_products,
 )
+from utils.pipeline_state import get_pipeline_state
 
 router = APIRouter(prefix="/recommendations", tags=["Recommandations"])
+_pipeline_state_manager = get_pipeline_state()
 
 
 # ── GET /recommendations/client/{client_id} ────────────────────────────────
@@ -24,6 +26,15 @@ def reco_for_client(
     Retourne les top-K produits recommandés pour un client,
     en combinant Collaborative Filtering, segmentation communautaire et PageRank.
     """
+    # Check if pipeline is running
+    if _pipeline_state_manager.is_running():
+        raise HTTPException(
+            status_code=503,
+            detail="Le pipeline GDS est actuellement en cours d'exécution. "
+                   "Les recommandations seront disponibles une fois le pipeline terminé. "
+                   "Vérifiez le statut via /api/v1/algorithms/status.",
+        )
+
     results = recommend_for_client(client_id, top_k)
     if not results:
         raise HTTPException(
@@ -49,6 +60,15 @@ def reco_for_product(
     Retourne les produits similaires à un produit donné
     via Node Similarity + co-achats. ("Vous aimerez aussi")
     """
+    # Check if pipeline is running
+    if _pipeline_state_manager.is_running():
+        raise HTTPException(
+            status_code=503,
+            detail="Le pipeline GDS est actuellement en cours d'exécution. "
+                   "Les recommandations seront disponibles une fois le pipeline terminé. "
+                   "Vérifiez le statut via /api/v1/algorithms/status.",
+        )
+
     results = recommend_for_product(product_id, top_k)
     if not results:
         raise HTTPException(
@@ -78,6 +98,15 @@ def top_recommendations(
     Tableau pré-calculé des top produits — résultats mis en cache 5 min.
     Idéal pour le dashboard principal.
     """
+    # Check if pipeline is running
+    if _pipeline_state_manager.is_running():
+        raise HTTPException(
+            status_code=503,
+            detail="Le pipeline GDS est actuellement en cours d'exécution. "
+                   "Les recommandations seront disponibles une fois le pipeline terminé. "
+                   "Vérifiez le statut via /api/v1/algorithms/status.",
+        )
+
     allowed_methods = {"pagerank", "degree", "betweenness", "combined"}
     if method not in allowed_methods:
         raise HTTPException(
@@ -102,6 +131,14 @@ def all_similar_clients(
     """
     Retourne toutes les paires de clients similaires dans le subset GDS.
     """
+    if _pipeline_state_manager.is_running():
+        raise HTTPException(
+            status_code=503,
+            detail="Le pipeline GDS est actuellement en cours d'exécution. "
+                   "Les recommandations seront disponibles une fois le pipeline terminé. "
+                   "Vérifiez le statut via /api/v1/algorithms/status.",
+        )
+
     results = db.query(
         """
         CALL gds.nodeSimilarity.stream('global-customer-product', {
@@ -109,14 +146,19 @@ def all_similar_clients(
             topK: $top_k
         })
         YIELD node1, node2, similarity
-        // Garder uniquement les paires Customer-Customer
-        MATCH (c1:Customer) WHERE elementId(c1) = elementId(gds.util.asNode(node1))
-        MATCH (c2:Customer) WHERE elementId(c2) = elementId(gds.util.asNode(node2))
+        
+        // Match clients using internal Neo4j IDs (node1/node2 are integers)
+        MATCH (c1:Customer) WHERE id(c1) = node1
+        MATCH (c2:Customer) WHERE id(c2) = node2
+        
         RETURN
-            c1.client_id AS client_id_1,
-            c1.name      AS name_1,
-            c2.client_id AS client_id_2,
-            c2.name      AS name_2,
+            // ✅ Field names matching frontend expectations
+            c1.client_id    AS customer1_id,
+            c1.name         AS name_1,
+            c1.community    AS community1_id,
+            c2.client_id    AS customer2_id,
+            c2.name         AS name_2,
+            c2.community    AS community2_id,
             round(similarity, 4) AS similarity
         ORDER BY similarity DESC
         """,
@@ -131,5 +173,5 @@ def all_similar_clients(
 
     return {
         "count": len(results),
-        "pairs": results,
+        "pairs": results,  # ✅ Now contains: customer1_id, customer2_id, community1_id, community2_id, similarity
     }

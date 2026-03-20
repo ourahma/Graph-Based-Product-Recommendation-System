@@ -31,95 +31,272 @@ def _clean(rows: list) -> list[dict]:
 # RECOMMANDATION POUR UN CLIENT
 # ─────────────────────────────────────────────────────────────────
 
-def recommend_for_client(client_id: str, top_k: int = 5) -> list[dict]:
+from typing import List, Dict, Any, Optional
+
+def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]:
     """
     Collaborative Filtering via stream GDS (rien écrit en base).
     Score = 0.70 * cf_score + 0.30 * pagerank_score
+    
+    Args:
+        client_id: L'ID métier du client (propriété `client_id` sur le nœud Customer)
+        top_k: Nombre de recommandations à retourner
+    
+    Returns:
+        List[Dict[str, Any]]: Liste des produits recommandés avec scores détaillés
     """
-    # 1. Récupérer le neo4j id() interne du client
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    # ─────────────────────────────────────────
+    # 1. Récupérer le client (matching flexible client_id)
+    # ─────────────────────────────────────────
+    # On utilise toString() pour gérer les cas où client_id est stocké en int vs reçu en string
     row = db.query(
-        "MATCH (c:Customer {client_id: $cid}) RETURN id(c) AS nid",
+        """
+        MATCH (c:Customer) 
+        WHERE toString(c.client_id) = toString($cid)
+        RETURN id(c) AS nid, c.name AS name, c.pagerank AS pr, c.client_id AS actual_cid
+        LIMIT 1
+        """,
         {"cid": client_id}
     )
+    
     if not row:
-        logger.warning(f"Client '{client_id}' introuvable")
-        return []
+        logger.warning(f"Client avec client_id='{client_id}' introuvable dans la base")
+        return _fallback_recommendations(top_k, reason=f"client '{client_id}' non trouvé")
+    
     nid = row[0]["nid"]
+    actual_cid = row[0]["actual_cid"]  # L'ID tel qu'il est stocké en base
+    client_name = row[0].get("name", "N/A")
+    client_pagerank = row[0].get("pr")
+    
+    logger.info(f"Client trouvé : client_id='{client_id}' (stocké: '{actual_cid}'), nid={nid}, pagerank={client_pagerank}")
 
-    # 2. Produits déjà achetés (par id interne pour éviter pb de type)
+    # ─────────────────────────────────────────
+    # 2. Vérifier que la projection GDS existe
+    # ─────────────────────────────────────────
+    try:
+        graph_check = db.query(
+            "CALL gds.graph.exists('global-customer-product') YIELD exists",
+        )
+        if not graph_check or not graph_check[0]["exists"]:
+            logger.error("Projection 'global-customer-product' non trouvée ! Relancez le pipeline GDS.")
+            return _fallback_recommendations(top_k, reason="projection GDS manquante")
+    except Exception as e:
+        logger.error(f"Erreur vérification projection GDS: {e}")
+        return _fallback_recommendations(top_k, reason=f"erreur projection: {e}")
+
+    # ─────────────────────────────────────────
+    # 3. Produits déjà achetés par ce client (IDs internes Neo4j)
+    # ─────────────────────────────────────────
     bought = db.query(
         """
-        MATCH (c:Customer {client_id: $cid})-[:PURCHASED]->(p:Product)
+        MATCH (c:Customer)-[:PURCHASED]->(p:Product)
+        WHERE toString(c.client_id) = toString($cid)
         RETURN id(p) AS nid
         """,
         {"cid": client_id}
     )
-    already_ids = [r["nid"] for r in bought]
+    already_ids: List[int] = [r["nid"] for r in bought]
+    logger.info(f"Client '{actual_cid}' a déjà acheté {len(already_ids)} produits")
 
-    # 3. Clients similaires via stream GDS (aucune relation créée)
+    # ─────────────────────────────────────────
+    # 4. Clients similaires via GDS Node Similarity
+    # ─────────────────────────────────────────
     similar_customers = stream_similar_customers(nid, top_k=20)
+    
     if not similar_customers:
-        logger.warning(f"Aucun client similaire trouvé pour '{client_id}'")
-        return []
+        # 🔍 Debug avec cutoff=0.0 pour diagnostiquer
+        logger.warning(f"Aucun client similaire trouvé pour '{actual_cid}' avec cutoff=0.05")
+        
+        try:
+            debug_result = db.query(
+                """
+                CALL gds.nodeSimilarity.stream('global-customer-product', {
+                    similarityCutoff: 0.0,
+                    topK: 5
+                })
+                YIELD node1, node2, similarity
+                WHERE node1 = $nid OR node2 = $nid
+                RETURN count(*) AS count, min(similarity) AS min_sim, max(similarity) AS max_sim
+                """,
+                {"nid": nid}
+            )
+            
+            if debug_result and debug_result[0]["count"] > 0:
+                logger.warning(
+                    f"Similarités trouvées avec cutoff=0.0 : count={debug_result[0]['count']}, "
+                    f"min={debug_result[0]['min_sim']:.4f}, max={debug_result[0]['max_sim']:.4f}. "
+                    f"→ Le seuil 0.05 est probablement trop élevé."
+                )
+            else:
+                logger.warning(
+                    f"Client nid={nid} n'a aucune similarité calculée. "
+                    f"Vérifiez qu'il fait partie du subset GDS (limit utilisé lors du pipeline)."
+                )
+        except Exception as e:
+            logger.error(f"Erreur debug similarité: {e}")
+        
+        # Fallback si pas de similarités
+        return _fallback_recommendations(top_k, reason="aucun client similaire trouvé", client_nid=nid)
+    
+    logger.info(f"✓ Trouvé {len(similar_customers)} clients similaires pour '{actual_cid}'")
 
+    # ─────────────────────────────────────────
+    # 5. Extraire les produits candidats (achetés par les similaires, pas par le client)
+    # ─────────────────────────────────────────
     similar_nids = [r["similar_nid"] for r in similar_customers]
     sim_map = {r["similar_nid"]: r["similarity"] for r in similar_customers}
 
-    # 4. Produits achetés par ces clients similaires, non encore achetés
     candidates = db.query(
         """
         MATCH (c)-[r:PURCHASED]->(p:Product)
         WHERE id(c) IN $nids
           AND NOT id(p) IN $already_ids
         RETURN
-            id(p)            AS product_nid,
-            p.product_id     AS product_id,
-            p.product_name   AS product_name,
-            p.category       AS category,
-            p.brand          AS brand,
-            p.price          AS price,
+            id(p)                     AS product_nid,
+            p.product_id              AS product_id,
+            p.product_name            AS product_name,
+            p.category                AS category,
+            p.brand                   AS brand,
+            p.price                   AS price,
             coalesce(p.pagerank, 0.0) AS pagerank,
-            id(c)            AS customer_nid,
+            id(c)                     AS customer_nid,
             coalesce(r.quantity, 1.0) AS quantity
         """,
         {"nids": similar_nids, "already_ids": already_ids}
     )
 
-    # 5. Calcul du score CF agrégé par produit
-    scores = {}
+    if not candidates:
+        logger.warning(f"Aucun produit candidat trouvé pour les clients similaires de '{actual_cid}'")
+        return _fallback_recommendations(top_k, reason="aucun produit candidat", client_nid=nid)
+
+    # ─────────────────────────────────────────
+    # 6. Calcul du score CF agrégé par produit
+    # ─────────────────────────────────────────
+    scores: Dict[int, Dict[str, Any]] = {}
+    
     for r in candidates:
         pid = r["product_nid"]
         sim = sim_map.get(r["customer_nid"], 0.0)
+        
         if pid not in scores:
-            scores[pid] = {"row": r, "raw_cf": 0.0, "supporters": 0}
+            scores[pid] = {"row": r, "raw_cf": 0.0, "supporters": 0.0}
+        
         scores[pid]["raw_cf"] += sim * r["quantity"]
         scores[pid]["supporters"] += sim
-    # 6. Score final
-    results = []
+
+    # ─────────────────────────────────────────
+    # 7. Score final hybride : 70% CF + 30% PageRank
+    # ─────────────────────────────────────────
+    results: List[Dict[str, Any]] = []
+    
     for pid, data in scores.items():
-        r        = data["row"]
+        r = data["row"]
+        
+        # Normalisation du score CF
         cf_score = data["raw_cf"] / (1e-6 + data["supporters"])
-        cf_score = cf_score / (1 + cf_score)
-        pr       = r["pagerank"]
+        cf_score = cf_score / (1 + cf_score)  # Compression [0, 1]
+        
+        # Normalisation du PageRank
+        pr = r["pagerank"] or 0.0
         pr_score = pr / (1.0 + pr)
         
-        final    = round(0.70 * cf_score + 0.30 * pr_score, 4)
+        # Score hybride
+        final_score = round(0.70 * cf_score + 0.30 * pr_score, 4)
+        
         results.append({
             "product_id":      r["product_id"],
             "product_name":    r["product_name"],
             "category":        r["category"],
             "brand":           r["brand"],
-            "price":           r["price"],
-            "score":           final,
+            "price":           float(r["price"]) if r["price"] is not None else None,
+            "score":           final_score,
             "method":          "collaborative_filtering",
             "cf_score":        round(cf_score, 4),
             "pagerank_score":  round(pr_score, 4),
             "supporter_count": round(data["supporters"], 4),
         })
 
+    # Tri et retour des top_k
     results.sort(key=lambda x: x["score"], reverse=True)
-    logger.info(f"recommend_for_client({client_id}): {len(results[:top_k])} résultats")
+    logger.info(f"✓ recommend_for_client('{actual_cid}'): {len(results[:top_k])} résultats retournés")
+    
     return _clean(results[:top_k])
+
+
+# ─────────────────────────────────────────
+# FONCTION FALLBACK (recommandation de secours)
+# ─────────────────────────────────────────
+def _fallback_recommendations(
+    top_k: int, 
+    reason: str, 
+    client_nid: Optional[int] = None
+) -> List[Dict[str, Any]]:
+    """
+    Fallback : retourne les produits les plus populaires par PageRank
+    quand le collaborative filtering échoue.
+    """
+    import logging
+    logger = logging.getLogger(__name__)
+    
+    logger.info(f"Fallback activé (raison: {reason}) — récupération des produits populaires")
+    
+    # Si on connaît le client, on exclut ses achats même en fallback
+    exclude_clause = "AND NOT id(p) IN $already" if client_nid else ""
+    
+    # ✅ Annotation explicite pour éviter l'inférence Dict[str, int]
+    exclude_params: Dict[str, Any] = {"limit": top_k}
+    
+    if client_nid:
+        # Récupérer les produits déjà achetés par ce client
+        already = db.query(
+            """
+            MATCH (c)-[:PURCHASED]->(p:Product)
+            WHERE id(c) = $nid
+            RETURN id(p) AS nid
+            """,
+            {"nid": client_nid}
+        )
+        exclude_params["already"] = [r["nid"] for r in already]
+    
+    results = db.query(
+        f"""
+        MATCH (p:Product)
+        WHERE p.pagerank IS NOT NULL 
+        {exclude_clause}
+        RETURN 
+            p.product_id              AS product_id,
+            p.product_name            AS product_name,
+            p.category                AS category,
+            p.brand                   AS brand,
+            p.price                   AS price,
+            p.pagerank                AS pagerank
+        ORDER BY p.pagerank DESC
+        LIMIT $limit
+        """,
+        exclude_params
+    )
+    
+    fallback_results = []
+    for r in results:
+        pr = r["pagerank"] or 0.0
+        pr_score = pr / (1.0 + pr)
+        
+        fallback_results.append({
+            "product_id":      r["product_id"],
+            "product_name":    r["product_name"],
+            "category":        r["category"],
+            "brand":           r["brand"],
+            "price":           float(r["price"]) if r["price"] is not None else None,
+            "score":           round(pr_score, 4),
+            "method":          "fallback_pagerank",
+            "note":            f"Recommandation de secours : {reason}",
+        })
+    
+    logger.info(f"Fallback : {len(fallback_results)} produits retournés")
+    return _clean(fallback_results)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -306,15 +483,11 @@ def get_segments(limit: int = 20) -> list[dict]:
     MATCH (c:Customer)
     WHERE c.community IS NOT NULL
     WITH c.community AS segment_id, collect(c) AS members
-    WITH segment_id,
-         size(members) AS size,
-         [m IN members | m.country] AS countries,
-         [m IN members | m.gender]  AS genders
     RETURN
         segment_id,
-        size,
-        countries[0..5] AS sample_countries,
-        genders[0..5]   AS sample_genders
+        size(members) AS size,
+        [m IN members | m.country][0..5] AS sample_countries,
+        [m IN members | COALESCE(m.gender, m.Gender, m.sex, 'N/A')][0..5] AS sample_genders
     ORDER BY size DESC
     LIMIT $limit
     """
@@ -351,21 +524,19 @@ def get_segment_customers(segment_id: int, limit: int = 20) -> list[dict]:
 @timed_cache(ttl=300)
 def get_category_insights() -> list[dict]:
     cypher = """
-    MATCH (c:Customer)-[r:PURCHASED]->(p:Product)
-    WITH p.category                                                            AS category,
-         count(r)                                                              AS total_purchases,
-         sum(coalesce(r.quantity, 1))                                         AS total_quantity,
-         sum(coalesce(r.price_at_purchase, p.price, 0) * coalesce(r.quantity, 1)) AS total_revenue
-    OPTIONAL MATCH (:Customer)-[rev:REVIEWED]->(p2:Product)
+    MATCH (p:Product)
+    WITH p.category AS category
+    OPTIONAL MATCH (c:Customer)-[r:PURCHASED]->(p2:Product)
     WHERE p2.category = category
+    OPTIONAL MATCH ()-[rev:REVIEWED]->(p2)
+    WITH category, p2, r, rev
     RETURN
         category,
-        total_purchases,
-        total_quantity,
-        round(total_revenue, 2)   AS total_revenue,
-        round(avg(rev.rating), 2) AS avg_rating,
-        count(rev)                AS total_reviews
-    ORDER BY total_revenue DESC
+        COUNT(DISTINCT p2) AS product_count,
+        COUNT(r) AS purchase_count,
+        ROUND(SUM(COALESCE(r.quantity, 1) * COALESCE(p2.price, 0)), 2) AS total_revenue,
+        ROUND(COALESCE(AVG(rev.rating), 4.5), 2) AS avg_rating
+    ORDER BY purchase_count DESC
     """
     return _clean(db.query(cypher))
 
