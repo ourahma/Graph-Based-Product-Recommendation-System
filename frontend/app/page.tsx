@@ -89,7 +89,7 @@ export default function Dashboard() {
         />
         <StatCard
           label="Graph Density"
-          value={`${((stats?.graphStats?.graph_density || 0) * 100).toFixed(2)}%`}
+          value={`${((stats?.graphStats?.graph_density || 0) * 100).toFixed(6)}%`}
           icon={<TrendingUp className="text-blue-400" size={24} />}
         />
       </div>

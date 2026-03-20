@@ -470,7 +470,6 @@ def list_all_clients(limit: int = 20) -> list[dict]:
         RETURN c.client_id AS client_id, c.name AS name, 
                COUNT { (c)-[:PURCHASED]->() } AS purchases
         ORDER BY toInteger(c.client_id)
-        LIMIT $limit
         """,
         {"limit": limit}
     )
@@ -568,7 +567,6 @@ def list_all_products(limit: int = 100) -> list[dict]:
                COUNT { (p)<-[:PURCHASED]-() } AS purchase_count,
                COUNT { (p)<-[:REVIEWED]-() } AS review_count
         ORDER BY purchase_count DESC
-        LIMIT $limit
         """,
         {"limit": limit}
     )

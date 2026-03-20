@@ -1,6 +1,4 @@
-"""
-services/recommendation.py
-"""
+from typing import List, Dict, Any, Optional
 from config.database import db
 from services.gds import stream_similar_customers, stream_similar_products
 from utils.cache import timed_cache
@@ -10,9 +8,7 @@ import math
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────
 # UTILITAIRE
-# ─────────────────────────────────────────────────────────────────
 
 def _clean(rows: list) -> list[dict]:
     cleaned = []
@@ -27,11 +23,7 @@ def _clean(rows: list) -> list[dict]:
     return cleaned
 
 
-# ─────────────────────────────────────────────────────────────────
 # RECOMMANDATION POUR UN CLIENT
-# ─────────────────────────────────────────────────────────────────
-
-from typing import List, Dict, Any, Optional
 
 def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]:
     """
@@ -226,9 +218,8 @@ def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]
     return _clean(results[:top_k])
 
 
-# ─────────────────────────────────────────
+
 # FONCTION FALLBACK (recommandation de secours)
-# ─────────────────────────────────────────
 def _fallback_recommendations(
     top_k: int, 
     reason: str, 

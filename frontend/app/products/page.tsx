@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { Package, TrendingUp, Star, Search, Filter } from 'lucide-react';
 import { Card, LoadingSpinner, ErrorAlert, StatCard, Badge } from '@/components/ui';
 import * as api from '@/services/api';
+import { formatNumber } from '@/utils/utils';
 
 interface Product {
   product_id: string;
@@ -94,22 +95,22 @@ export default function ProductsPage() {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Total Products"
-          value={allProducts.length}
+          value={formatNumber(allProducts.length)}
           icon={<Package className="text-primary-400" size={24} />}
         />
         <StatCard
           label="Categories"
-          value={categories.length}
+          value={formatNumber(categories.length)}
           icon={<TrendingUp className="text-accent-400" size={24} />}
         />
         <StatCard
           label="Total Purchases"
-          value={totalPurchases}
+          value={formatNumber(totalPurchases)}
           icon={<TrendingUp className="text-green-400" size={24} />}
         />
         <StatCard
           label="Total Reviews"
-          value={totalReviews}
+          value={formatNumber(totalReviews)}
           icon={<Star className="text-yellow-400" size={24} />}
         />
       </div>

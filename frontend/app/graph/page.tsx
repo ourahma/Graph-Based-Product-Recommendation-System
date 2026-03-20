@@ -4,7 +4,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { Network, TrendingUp, Zap, Maximize2 } from 'lucide-react';
 import { Card, LoadingSpinner, ErrorAlert, StatCard } from '@/components/ui';
 import * as api from '@/services/api';
-
+import { formatNumber, formatCurrency } from '@/utils/utils';
 // GraphVisualization Component
 function GraphVisualization({ data }: { data: any[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -145,17 +145,17 @@ export default function GraphPage() {
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         <StatCard
           label="Total Nodes"
-          value={graphStats?.total_nodes || 50000}
+          value={formatNumber(graphStats?.total_nodes || 50000)}
           icon={<Network className="text-primary-400" size={24} />}
         />
         <StatCard
           label="Graph Density"
-          value={`${((graphStats?.graph_density || 0.0012) * 100).toFixed(4)}%`}
+          value={`${((graphStats?.graph_density || 0.0012) * 100).toFixed(6)}%`}
           icon={<Zap className="text-accent-400" size={24} />}
         />
         <StatCard
           label="Avg Degree"
-          value={`${(graphStats?.avg_degree || 24.5).toFixed(1)}`}
+          value={formatNumber(graphStats?.avg_degree || 24.5)}
           icon={<TrendingUp className="text-green-400" size={24} />}
         />
       </div>
@@ -177,11 +177,11 @@ export default function GraphPage() {
         <h2 className="mb-6 text-xl font-bold text-white">Network Statistics</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[
-            { label: 'Total Relationships', value: graphStats?.relationship_count || 0 },
-            { label: 'Graph Diameter', value: graphStats?.diameter || 12 },
+            { label: 'Total Relationships', value: formatNumber(graphStats?.relationship_count || 0) },
+            { label: 'Graph Diameter', value: formatNumber(graphStats?.diameter || 12) },
             { label: 'Avg Shortest Path', value: (graphStats?.avg_shortest_path || 3.5).toFixed(2) },
-            { label: 'Connected Components', value: graphStats?.num_components || 1 },
-            { label: 'Max Degree Node', value: graphStats?.max_degree || 1200 },
+            { label: 'Connected Components', value: formatNumber(graphStats?.num_components || 1) },
+            { label: 'Max Degree Node', value: formatNumber(graphStats?.max_degree || 1200) },
             { label: 'Clustering Coefficient', value: (graphStats?.clustering_coefficient || 0.45).toFixed(3) },
           ].map((stat, idx) => (
             <div key={idx} className="rounded-lg bg-white/5 border border-white/10 p-4">

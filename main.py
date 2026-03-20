@@ -1,28 +1,22 @@
-"""
-main.py — Point d'entrée FastAPI
-Système de recommandation Neo4j GDS
-"""
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import logging
 import os
 from dotenv import load_dotenv
-
 from routers import recommendations, customers, analytics, algorithms
-from scripts.fix_distributions import fix_purchases_distribution
 from scripts.seed_purchases import seed_missing_purchases
 
 load_dotenv()
 
-# ── Logging ────────────────────────────────────────────────────────────────
+#  Logging 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# ── Application ────────────────────────────────────────────────────────────
+#  Application 
 app = FastAPI(
     title="Graph Recommendation API",
     description="""
@@ -51,7 +45,7 @@ Endpoints disponibles :
     version="1.0.0",
 )
 
-# ── CORS ───────────────────────────────────────────────────────────────────
+#  CORS ─
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -60,14 +54,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── Routers ────────────────────────────────────────────────────────────────
+#  Routers 
 PREFIX = "/api/v1"
 app.include_router(recommendations.router, prefix=PREFIX)
 app.include_router(customers.router,       prefix=PREFIX)
 app.include_router(analytics.router,       prefix=PREFIX)
 app.include_router(algorithms.router,      prefix=PREFIX)
 
-# ── Gestionnaire d'erreurs global ─────────────────────────────────────────
+#  Gestionnaire d'erreurs global ─
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Erreur non gérée sur {request.url}: {exc}", exc_info=True)
@@ -76,7 +70,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         content={"detail": "Erreur serveur interne.", "error": str(exc)},
     )
 
-# ── Health check ───────────────────────────────────────────────────────────
+#  Health check 
 @app.get("/health", tags=["Health"])
 def health():
     from config.database import db
@@ -97,18 +91,12 @@ def root():
     }
 
 
-# ── Démarrage ──────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
-    seed_missing_purchases(
-        batch_size=900,    
-        coverage_pct=0.40,   # 60% des clients sans achats en recevront
-                             
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=int(os.getenv("APP_PORT", 8000)),
+        reload=True,
     )
-    # import uvicorn
-    # uvicorn.run(
-    #     "main:app",
-    #     host="0.0.0.0",
-    #     port=int(os.getenv("APP_PORT", 8000)),
-    #     reload=True,
-    # )
-    
