@@ -11,62 +11,207 @@ function GraphVisualization({ data }: { data: any[] }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
-    if (!canvasRef.current || !data || data.length === 0) return;
+    if (!canvasRef.current) return;
 
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Set canvas size
-    canvas.width = canvas.offsetWidth;
-    canvas.height = canvas.offsetHeight;
-
-    // Generate random nodes if no data
-    const nodes = data.length > 0 
-      ? data.slice(0, 30).map((d: any, i: number) => ({
-          id: i,
-          x: Math.random() * (canvas.width - 100) + 50,
-          y: Math.random() * (canvas.height - 100) + 50,
-          label: `C${d?.client_id_1 || i}`,
-          size: 8 + (d?.similarity || 0) * 20,
-        }))
-      : Array.from({ length: 20 }, (_, i) => ({
-          id: i,
-          x: Math.random() * (canvas.width - 100) + 50,
-          y: Math.random() * (canvas.height - 100) + 50,
+    const buildGraph = (width: number, height: number) => {
+      if (!Array.isArray(data) || data.length === 0) {
+        const nodes = Array.from({ length: 20 }, (_, i) => ({
+          id: `node-${i}`,
+          x: Math.random() * (width - 100) + 50,
+          y: Math.random() * (height - 100) + 50,
           label: `Node ${i}`,
           size: 8,
         }));
+        return { nodes, edges: [] as any[] };
+      }
 
-    // Draw connections
-    ctx.strokeStyle = 'rgba(100, 150, 255, 0.2)';
-    ctx.lineWidth = 1;
-    for (let i = 0; i < nodes.length; i++) {
-      for (let j = i + 1; j < nodes.length; j++) {
-        if (Math.random() > 0.7) {
-          ctx.beginPath();
-          ctx.moveTo(nodes[i].x, nodes[i].y);
-          ctx.lineTo(nodes[j].x, nodes[j].y);
-          ctx.stroke();
+      const maxEdges = 60;
+      const maxNodes = 30;
+      const edges = data
+        .filter((d: any) => d?.customer1_id || d?.client_id_1)
+        .sort((a: any, b: any) => (b?.similarity || 0) - (a?.similarity || 0))
+        .slice(0, maxEdges)
+        .map((d: any) => ({
+          source: String(d?.customer1_id || d?.client_id_1),
+          target: String(d?.customer2_id || d?.client_id_2),
+          similarity: d?.similarity || 0,
+        }));
+
+      const nodeMap = new Map<string, any>();
+      for (const e of edges) {
+        if (nodeMap.size < maxNodes && !nodeMap.has(e.source)) {
+          nodeMap.set(e.source, {
+            id: e.source,
+            x: Math.random() * (width - 100) + 50,
+            y: Math.random() * (height - 100) + 50,
+            label: `C${e.source}`,
+            size: 14,
+            vx: 0,
+            vy: 0,
+          });
+        }
+        if (nodeMap.size < maxNodes && !nodeMap.has(e.target)) {
+          nodeMap.set(e.target, {
+            id: e.target,
+            x: Math.random() * (width - 100) + 50,
+            y: Math.random() * (height - 100) + 50,
+            label: `C${e.target}`,
+            size: 14,
+            vx: 0,
+            vy: 0,
+          });
+        }
+        if (nodeMap.size >= maxNodes) break;
+      }
+
+      const nodes = Array.from(nodeMap.values());
+      const nodeSet = new Set(nodes.map((n) => n.id));
+      const prunedEdges = edges.filter((e) => nodeSet.has(e.source) && nodeSet.has(e.target));
+
+      return { nodes, edges: prunedEdges };
+    };
+
+    const runLayout = (nodes: any[], edges: any[], width: number, height: number) => {
+      const iterations = 260;
+      const repulsion = 2600;
+      const spring = 0.0012;
+      const damping = 0.85;
+
+      for (let i = 0; i < iterations; i++) {
+        // Repulsion
+        for (let a = 0; a < nodes.length; a++) {
+          for (let b = a + 1; b < nodes.length; b++) {
+            const n1 = nodes[a];
+            const n2 = nodes[b];
+            const dx = n2.x - n1.x;
+            const dy = n2.y - n1.y;
+            const dist2 = dx * dx + dy * dy + 0.01;
+            const force = repulsion / dist2;
+            const fx = (force * dx);
+            const fy = (force * dy);
+            n1.vx -= fx;
+            n1.vy -= fy;
+            n2.vx += fx;
+            n2.vy += fy;
+          }
+        }
+
+        // Springs
+        for (const e of edges) {
+          const n1 = nodes.find((n) => n.id === e.source);
+          const n2 = nodes.find((n) => n.id === e.target);
+          if (!n1 || !n2) continue;
+          const dx = n2.x - n1.x;
+          const dy = n2.y - n1.y;
+          const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
+          const desired = 160;
+          const force = spring * (dist - desired);
+          const fx = (force * dx) / dist;
+          const fy = (force * dy) / dist;
+          n1.vx += fx;
+          n1.vy += fy;
+          n2.vx -= fx;
+          n2.vy -= fy;
+        }
+
+        // Simple collision resolution to reduce overlaps.
+        for (let a = 0; a < nodes.length; a++) {
+          for (let b = a + 1; b < nodes.length; b++) {
+            const n1 = nodes[a];
+            const n2 = nodes[b];
+            const dx = n2.x - n1.x;
+            const dy = n2.y - n1.y;
+            const dist = Math.sqrt(dx * dx + dy * dy) + 0.01;
+            const minDist = (n1.size + n2.size) * 1.4;
+            if (dist < minDist) {
+              const push = (minDist - dist) * 0.5;
+              const nx = dx / dist;
+              const ny = dy / dist;
+              n1.x -= nx * push;
+              n1.y -= ny * push;
+              n2.x += nx * push;
+              n2.y += ny * push;
+            }
+          }
+        }
+
+        // Integrate
+        for (const n of nodes) {
+          n.vx *= damping;
+          n.vy *= damping;
+          n.x += n.vx;
+          n.y += n.vy;
+          const pad = 26;
+          n.x = Math.min(width - pad, Math.max(pad, n.x));
+          n.y = Math.min(height - pad, Math.max(pad, n.y));
         }
       }
-    }
+    };
 
-    // Draw nodes
-    nodes.forEach((node: any) => {
-      ctx.fillStyle = `hsl(${(node.id * 15) % 360}, 70%, 50%)`;
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, node.size, 0, Math.PI * 2);
-      ctx.fill();
+    const drawGraph = () => {
+      const rect = canvas.getBoundingClientRect();
+      const width = Math.max(1, rect.width);
+      const height = Math.max(1, rect.height);
+      const dpr = window.devicePixelRatio || 1;
 
-      // Draw label
-      ctx.fillStyle = 'white';
-      ctx.font = 'bold 11px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(node.label, node.x, node.y);
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, width, height);
+
+      const { nodes, edges } = buildGraph(width, height);
+      runLayout(nodes, edges, width, height);
+
+      // Draw edges (actual similarity pairs)
+      ctx.strokeStyle = 'rgba(100, 150, 255, 0.25)';
+      for (const e of edges) {
+        const n1 = nodes.find((n) => n.id === e.source);
+        const n2 = nodes.find((n) => n.id === e.target);
+        if (!n1 || !n2) continue;
+        const alpha = Math.min(0.8, 0.15 + (e.similarity || 0) * 0.8);
+        ctx.lineWidth = Math.max(1, (e.similarity || 0) * 3);
+        ctx.strokeStyle = `rgba(100, 150, 255, ${alpha})`;
+        ctx.beginPath();
+        ctx.moveTo(n1.x, n1.y);
+        ctx.lineTo(n2.x, n2.y);
+        ctx.stroke();
+      }
+
+      // Draw nodes
+      nodes.forEach((node: any, idx: number) => {
+        ctx.fillStyle = `hsl(${(idx * 15) % 360}, 70%, 50%)`;
+        ctx.beginPath();
+        ctx.arc(node.x, node.y, node.size, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw label
+        ctx.fillStyle = 'white';
+        ctx.font = 'bold 11px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(node.label, node.x, node.y);
+      });
+    };
+
+    drawGraph();
+
+    const resizeObserver = new ResizeObserver(() => {
+      drawGraph();
     });
-  }, [data]);
+    resizeObserver.observe(canvas);
+
+    const handleResize = () => drawGraph();
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [data, isFullscreen]);
 
   return (
     <div className={`relative ${isFullscreen ? 'fixed inset-0 z-50 bg-slate-900' : ''}`}>
@@ -103,7 +248,7 @@ export default function GraphPage() {
         const [statsRes, similarRes, segmentsRes] = await Promise.all([
           api.getGraphStats(),
           api.getSimilarCustomers(),
-          api.getSegments(),
+          api.getSegments(0),
         ]);
 
         setGraphStats(statsRes.data?.graph_stats || statsRes.data || {});
@@ -136,6 +281,21 @@ export default function GraphPage() {
       </div>
     );
   }
+
+  const similarityValues = similarCustomers.map((p) => p?.similarity ?? 0);
+  const similarityCount = similarityValues.length;
+  const similaritySum = similarityValues.reduce((sum, v) => sum + v, 0);
+  const similarityAvg = similarityCount > 0 ? similaritySum / similarityCount : 0;
+  const similarityMin = similarityCount > 0 ? Math.min(...similarityValues) : 0;
+  const similarityMax = similarityCount > 0 ? Math.max(...similarityValues) : 0;
+  const uniqueCustomers = new Set(
+    similarCustomers.flatMap((p) => [
+      p?.client_id_1,
+      p?.customer1_id,
+      p?.client_id_2,
+      p?.customer2_id,
+    ].filter(Boolean))
+  ).size;
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -177,12 +337,12 @@ export default function GraphPage() {
         <h2 className="mb-6 text-xl font-bold text-white">Network Statistics</h2>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[
-            { label: 'Total Relationships', value: formatNumber(graphStats?.relationship_count || 0) },
-            { label: 'Graph Diameter', value: formatNumber(graphStats?.diameter || 12) },
-            { label: 'Avg Shortest Path', value: (graphStats?.avg_shortest_path || 3.5).toFixed(2) },
-            { label: 'Connected Components', value: formatNumber(graphStats?.num_components || 1) },
-            { label: 'Max Degree Node', value: formatNumber(graphStats?.max_degree || 1200) },
-            { label: 'Clustering Coefficient', value: (graphStats?.clustering_coefficient || 0.45).toFixed(3) },
+            { label: 'Similarity Pairs', value: formatNumber(similarityCount) },
+            { label: 'Unique Customers', value: formatNumber(uniqueCustomers) },
+            { label: 'Avg Similarity', value: similarityAvg.toFixed(3) },
+            { label: 'Min Similarity', value: similarityMin.toFixed(3) },
+            { label: 'Max Similarity', value: similarityMax.toFixed(3) },
+            { label: 'Total Similarity', value: similaritySum.toFixed(2) },
           ].map((stat, idx) => (
             <div key={idx} className="rounded-lg bg-white/5 border border-white/10 p-4">
               <p className="text-sm text-slate-400">{stat.label}</p>
@@ -199,7 +359,7 @@ export default function GraphPage() {
           Top customer pairs with similar purchasing behavior (based on Node Similarity algorithm)
         </p>
         <div className="space-y-3 max-h-96 overflow-y-auto">
-          {similarCustomers.slice(0, 20).map((pair, idx) => (
+          {similarCustomers.map((pair, idx) => (
             <div
               key={idx}
               className="flex items-center justify-between rounded-lg bg-white/5 p-4 hover:bg-white/10 transition-colors border border-white/10"
@@ -292,7 +452,6 @@ export default function GraphPage() {
               {(() => {
                 const sizes = segments.filter((s: any) => s?.size).map((s: any) => s.size);
                 const total = sizes.reduce((a: number, b: number) => a + b, 0);
-                const avg = Math.round(total / sizes.length);
                 const max = Math.max(...sizes);
                 const min = Math.min(...sizes);
                 return (
@@ -300,10 +459,6 @@ export default function GraphPage() {
                     <div className="rounded-lg bg-white/5 border border-white/10 p-3">
                       <p className="text-xs font-medium text-slate-400">Total Customers</p>
                       <p className="mt-1 text-lg font-bold text-white">{total.toLocaleString()}</p>
-                    </div>
-                    <div className="rounded-lg bg-white/5 border border-white/10 p-3">
-                      <p className="text-xs font-medium text-slate-400">Avg Segment</p>
-                      <p className="mt-1 text-lg font-bold text-accent-400">{avg.toLocaleString()}</p>
                     </div>
                     <div className="rounded-lg bg-white/5 border border-white/10 p-3">
                       <p className="text-xs font-medium text-slate-400">Largest</p>
@@ -327,6 +482,7 @@ export default function GraphPage() {
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Members</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Distribution</th>
                     <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Regions</th>
+                    <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-slate-400">Genders</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/10">
@@ -347,8 +503,19 @@ export default function GraphPage() {
                       categoryColor = 'primary';
                     }
                     
-                    const countries = Array.isArray(segment?.sample_countries) 
-                      ? segment.sample_countries.filter((c: string) => c && c !== 'Unknown').slice(0, 2)
+                    const countries = Array.isArray(segment?.sample_countries)
+                      ? Array.from(new Set<string>(
+                          (segment.sample_countries as string[]).filter(
+                            (c): c is string => Boolean(c) && c !== 'Unknown'
+                          )
+                        ))
+                      : [];
+                    const genders = Array.isArray(segment?.sample_genders)
+                      ? Array.from(new Set<string>(
+                          (segment.sample_genders as string[]).filter(
+                            (g): g is string => Boolean(g) && g !== 'Unknown' && g !== 'N/A'
+                          )
+                        ))
                       : [];
                     
                     // Color code segment IDs
@@ -404,9 +571,21 @@ export default function GraphPage() {
                             ) : (
                               <span className="text-xs text-slate-500">-</span>
                             )}
-                            {countries.length < (segment?.sample_countries?.filter((c: string) => c && c !== 'Unknown').length || 0) && (
-                              <span className="text-xs text-slate-500">+{segment?.sample_countries?.filter((c: string) => c && c !== 'Unknown').length - countries.length}</span>
+                            
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {genders.length > 0 ? (
+                              genders.map((gender: string, gidx: number) => (
+                                <span key={gidx} className="inline-flex items-center rounded-full bg-accent-500/20 text-accent-400 border border-accent-500/50 px-2 py-0.5 text-xs">
+                                  {gender}
+                                </span>
+                              ))
+                            ) : (
+                              <span className="text-xs text-slate-500">-</span>
                             )}
+                            
                           </div>
                         </td>
                       </tr>

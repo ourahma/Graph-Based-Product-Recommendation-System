@@ -8,6 +8,12 @@ load_dotenv(override=True)
 
 
 class Neo4jClient:
+    """
+    Simple singleton wrapper around the Neo4j driver.
+
+    Reads connection settings from environment variables and exposes
+    helper methods to run read/write Cypher queries.
+    """
     _instance = None
     driver: Driver | None = None
     database: str | None = None
@@ -16,6 +22,7 @@ class Neo4jClient:
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             
+            # Connection configuration from environment.
             uri = os.getenv("NEO4J_URI")
             user = os.getenv("NEO4J_USER")
             password = os.getenv("NEO4J_PASSWORD")
@@ -30,11 +37,13 @@ class Neo4jClient:
             )
             cls._instance.database = database
             
+            # Ensure the driver is closed when the process exits.
             atexit.register(cls._instance.close)
             
         return cls._instance
 
     def query(self, cypher: str, params: dict[str, Any] | None = None) -> list[dict]:
+        """Run a Cypher query and return a list of record dictionaries."""
         if params is None:
             params = {}
         
@@ -46,6 +55,7 @@ class Neo4jClient:
             return [record.data() for record in result]
 
     def run(self, cypher: str, params: dict[str, Any] | None = None) -> None:
+        """Run a Cypher query without returning results (fire-and-forget)."""
         if params is None:
             params = {}
         
@@ -56,6 +66,7 @@ class Neo4jClient:
             session.run(cypher, params).consume()  # type: ignore
 
     def close(self):
+        """Close the Neo4j driver if it exists."""
         if self.driver:
             self.driver.close()
 

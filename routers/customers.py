@@ -13,11 +13,11 @@ router = APIRouter(prefix="/customers", tags=["Clients"])
 
 
 @router.get("/segments")
-def list_segments(limit: int = Query(default=20, ge=1, le=100)):
+def list_segments(limit: int = Query(default=20, ge=0)):
     """
     Les segments représentent des communautés de clients détectées par l’algorithme de Louvain, où chaque groupe regroupe des utilisateurs ayant des comportements d’achat similaires.
     """
-    results = get_segments(limit=limit)
+    results = get_segments(limit=limit if limit > 0 else None)
     return {"count": len(results), "segments": results}
 
 

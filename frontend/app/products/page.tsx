@@ -43,7 +43,8 @@ export default function ProductsPage() {
           purchase_count: p.purchase_count,
         }));
 
-        setProducts(productsList);
+        const limitedList = productsList.slice(0, 500);
+        setProducts(limitedList);
         setAllProducts(productsList);
       } catch (err: any) {
         console.error('Error fetching products:', err);
@@ -72,12 +73,12 @@ export default function ProductsPage() {
   ) as string[];
 
   const avgRating =
-    products.length > 0
-      ? (products.reduce((sum, p) => sum + (p.rating || 0), 0) / products.length).toFixed(2)
+    allProducts.length > 0
+      ? (allProducts.reduce((sum, p) => sum + (p.rating || 0), 0) / allProducts.length).toFixed(2)
       : 0;
 
-  const totalReviews = products.reduce((sum, p) => sum + (p.review_count || 0), 0);
-  const totalPurchases = products.reduce((sum, p) => sum + (p.purchase_count || 0), 0);
+  const totalReviews = allProducts.reduce((sum, p) => sum + (p.review_count || 0), 0);
+  const totalPurchases = allProducts.reduce((sum, p) => sum + (p.purchase_count || 0), 0);
 
   if (loading) {
     return (

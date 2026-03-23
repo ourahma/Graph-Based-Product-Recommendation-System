@@ -92,16 +92,11 @@ export default function CustomersPage() {
       {error && <ErrorAlert message={error} />}
 
       {/* Header Stats */}
-      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
         <StatCard
           label="Total Unique Customers"
           value={formatNumber(statsData.unique_customer_ids || customers.length || 0)}
           icon={<Users className="text-primary-400" size={24} />}
-        />
-        <StatCard
-          label="Customers with Purchases"
-          value={formatNumber(customersWithPurchases)}
-          icon={<TrendingUp className="text-accent-400" size={24} />}
         />
         <StatCard
           label="Total Purchases"

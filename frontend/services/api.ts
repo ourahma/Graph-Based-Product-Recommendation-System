@@ -35,11 +35,15 @@ export const getSimilarCustomers = () =>
   api.get(`${API_PREFIX}/recommendations/clients/similar-all`);
 
 // Customers
-export const getSegments = () =>
-  api.get(`${API_PREFIX}/customers/segments`);
+export const getSegments = (limit?: number) =>
+  api.get(`${API_PREFIX}/customers/segments`, {
+    params: limit === undefined ? undefined : { limit },
+  });
 
-export const getCustomerSegments = () =>
-  api.get(`${API_PREFIX}/customers/segments`);
+export const getCustomerSegments = (limit?: number) =>
+  api.get(`${API_PREFIX}/customers/segments`, {
+    params: limit === undefined ? undefined : { limit },
+  });
 
 export const getSegmentCustomers = (segmentId: number | string) =>
   api.get(`${API_PREFIX}/customers/segments/${segmentId}`);
@@ -74,7 +78,7 @@ export const getDiagnosticGraphs = () =>
 export const getDiagnosticClient = (clientId: string) =>
   api.get(`${API_PREFIX}/algorithms/diagnose/client/${clientId}`);
 
-export const getDiagnosticProducts = (limit: number = 500) =>
+export const getDiagnosticProducts = (limit: number) =>
   api.get(`${API_PREFIX}/algorithms/diagnose/products`, { params: { limit } });
 
 export default api;

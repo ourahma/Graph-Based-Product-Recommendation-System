@@ -161,7 +161,7 @@ export default function Analytics() {
                     ${(formatCurrency(category?.total_revenue || 0))}
                   </td>
                   <td className="px-6 py-4 text-sm text-yellow-400 font-semibold">
-                    {(category?.avg_rating || 4.5).toFixed(1)} ⭐
+                    {(category?.avg_rating || 4.5)} ⭐
                   </td>
                 </tr>
               ))}
@@ -173,12 +173,10 @@ export default function Analytics() {
       {/* Graph Statistics */}
       <Card>
         <h2 className="mb-6 text-xl font-bold text-white">📈 Graph Database Metrics</h2>
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mx-auto grid max-w-3xl grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-2">
           {[
             { label: 'Total Nodes', value: formatNumber(graphStats?.total_nodes || 0 )},
             { label: 'Total Relationships', value: formatNumber(graphStats?.relationship_count || 0 )},
-            { label: 'Graph Diameter', value: graphStats?.diameter || 0 },
-            { label: 'Avg Shortest Path', value: (graphStats?.avg_shortest_path || 0).toFixed(2) },
           ].map((stat, idx) => (
             <div key={idx} className="rounded-lg bg-white/5 border border-white/10 p-4">
               <p className="text-sm text-slate-400">{stat.label}</p>

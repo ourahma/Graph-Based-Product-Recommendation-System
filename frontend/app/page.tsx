@@ -110,7 +110,7 @@ export default function Dashboard() {
                     {idx + 1}
                   </div>
                   <div>
-                    <p className="font-medium text-white">{item?.product_id || 'Product ' + (idx + 1)}</p>
+                    <p className="font-medium text-white">{item?.product_name+' #'+item.product_id || 'Product ' + (idx + 1)}</p>
                     <p className="text-sm text-slate-400">{item?.recommendation_score || 'High priority'}</p>
                   </div>
                 </div>
@@ -139,8 +139,8 @@ export default function Dashboard() {
               </p>
             </div>
             <div className="rounded-lg bg-white/5 p-4">
-              <p className="text-sm text-slate-400">Recommendation Engines</p>
-              <p className="text-2xl font-bold text-blue-400 mt-1">6</p>
+              <p className="text-sm text-slate-400">Recommandation Algorithms</p>
+              <p className="text-2xl font-bold text-blue-400 mt-1">5</p>
             </div>
           </div>
         </Card>

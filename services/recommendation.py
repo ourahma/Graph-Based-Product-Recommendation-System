@@ -8,9 +8,11 @@ import math
 logger = logging.getLogger(__name__)
 
 
-# UTILITAIRE
+################## UTILITAIRE
 
+# Convertit les valeurs NaN/Inf en None pour éviter les problèmes de sérialisation JSON
 def _clean(rows: list) -> list[dict]:
+    # Replace NaN/Inf with None to keep JSON serialization safe.
     cleaned = []
     for row in rows:
         record = {}
@@ -23,11 +25,10 @@ def _clean(rows: list) -> list[dict]:
     return cleaned
 
 
-# RECOMMANDATION POUR UN CLIENT
-
+################## RECOMMANDATION POUR UN CLIENT
 def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]:
     """
-    Collaborative Filtering via stream GDS (rien écrit en base).
+    Collaborative Filtering via stream GDS.
     Score = 0.70 * cf_score + 0.30 * pagerank_score
     
     Args:
@@ -44,6 +45,8 @@ def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]
     # 1. Récupérer le client (matching flexible client_id)
     # ─────────────────────────────────────────
     # On utilise toString() pour gérer les cas où client_id est stocké en int vs reçu en string
+    # Resolve the customer node using a flexible id match.
+    # Resolve internal Neo4j id for the product.
     row = db.query(
         """
         MATCH (c:Customer) 
@@ -82,6 +85,7 @@ def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]
     # ─────────────────────────────────────────
     # 3. Produits déjà achetés par ce client (IDs internes Neo4j)
     # ─────────────────────────────────────────
+    # Collect already purchased products to exclude them.
     bought = db.query(
         """
         MATCH (c:Customer)-[:PURCHASED]->(p:Product)
@@ -96,10 +100,11 @@ def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]
     # ─────────────────────────────────────────
     # 4. Clients similaires via GDS Node Similarity
     # ─────────────────────────────────────────
+    # Pull a broader set of similar customers to build candidates.
     similar_customers = stream_similar_customers(nid, top_k=20)
     
     if not similar_customers:
-        # 🔍 Debug avec cutoff=0.0 pour diagnostiquer
+        # Debug avec cutoff=0.0 pour diagnostiquer
         logger.warning(f"Aucun client similaire trouvé pour '{actual_cid}' avec cutoff=0.05")
         
         try:
@@ -141,6 +146,7 @@ def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]
     similar_nids = [r["similar_nid"] for r in similar_customers]
     sim_map = {r["similar_nid"]: r["similarity"] for r in similar_customers}
 
+    # Candidate products are those bought by similar customers.
     candidates = db.query(
         """
         MATCH (c)-[r:PURCHASED]->(p:Product)
@@ -169,12 +175,13 @@ def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]
     # ─────────────────────────────────────────
     scores: Dict[int, Dict[str, Any]] = {}
     
+    # Aggregate collaborative filtering signal per product.
     for r in candidates:
         pid = r["product_nid"]
-        sim = sim_map.get(r["customer_nid"], 0.0)
+        sim = sim_map.get(r["customer_nid"], 0.0) # sim_map est basé sur les clients similaires, pas les produits, donc on récupère la similarité du client qui a acheté ce produitword
         
         if pid not in scores:
-            scores[pid] = {"row": r, "raw_cf": 0.0, "supporters": 0.0}
+            scores[pid] = {"row": r, "raw_cf": 0.0, "supporters": 0.0} # scores[pid] contient la ligne de données du produit, le score CF brut et le nombre de supporters (clients similaires qui ont acheté)
         
         scores[pid]["raw_cf"] += sim * r["quantity"]
         scores[pid]["supporters"] += sim
@@ -188,11 +195,13 @@ def recommend_for_client(client_id: str, top_k: int = 5) -> List[Dict[str, Any]]
         r = data["row"]
         
         # Normalisation du score CF
+        # Normalize CF score by supporter strength.
         cf_score = data["raw_cf"] / (1e-6 + data["supporters"])
         cf_score = cf_score / (1 + cf_score)  # Compression [0, 1]
         
         # Normalisation du PageRank
         pr = r["pagerank"] or 0.0
+        # Normalize PageRank into [0, 1).
         pr_score = pr / (1.0 + pr)
         
         # Score hybride
@@ -235,6 +244,7 @@ def _fallback_recommendations(
     logger.info(f"Fallback activé (raison: {reason}) — récupération des produits populaires")
     
     # Si on connaît le client, on exclut ses achats même en fallback
+    # If we know the client, keep their past purchases excluded.
     exclude_clause = "AND NOT id(p) IN $already" if client_nid else ""
     
     # ✅ Annotation explicite pour éviter l'inférence Dict[str, int]
@@ -242,6 +252,7 @@ def _fallback_recommendations(
     
     if client_nid:
         # Récupérer les produits déjà achetés par ce client
+        # Fetch products already purchased by this client.
         already = db.query(
             """
             MATCH (c)-[:PURCHASED]->(p:Product)
@@ -271,6 +282,7 @@ def _fallback_recommendations(
     )
     
     fallback_results = []
+    # Normalize PageRank for fallback scoring.
     for r in results:
         pr = r["pagerank"] or 0.0
         pr_score = pr / (1.0 + pr)
@@ -290,9 +302,7 @@ def _fallback_recommendations(
     return _clean(fallback_results)
 
 
-# ─────────────────────────────────────────────────────────────────
-# RECOMMANDATION POUR UN PRODUIT
-# ─────────────────────────────────────────────────────────────────
+################## RECOMMANDATION POUR UN PRODUIT
 
 def recommend_for_product(product_id: str, top_k: int = 5) -> list[dict]:
     """
@@ -314,12 +324,14 @@ def recommend_for_product(product_id: str, top_k: int = 5) -> list[dict]:
     nid = row[0]["nid"]
 
     # 2. Produits similaires via GDS
+    # Pull extra similar products for scoring.
     similar = stream_similar_products(nid, top_k=top_k * 3)
 
     if not similar:
         logger.warning(f"Aucun produit similaire pour '{product_id}', fallback popularité")
 
         # fallback : produits populaires
+        # Fallback to popular products when similarity is missing.
         rows = db.query(
             """
             MATCH (p:Product)
@@ -336,7 +348,8 @@ def recommend_for_product(product_id: str, top_k: int = 5) -> list[dict]:
             {"top_k": top_k}
         )
 
-        # normalisation simple
+        # Simple normalization into [0, 1).
+        # Car la normalisation aide à rendre les scores plus interprétables et comparables, même dans le fallback.
         results = []
         for r in rows:
             pop = r["popularity"]
@@ -359,6 +372,7 @@ def recommend_for_product(product_id: str, top_k: int = 5) -> list[dict]:
     sim_map = {r["similar_nid"]: r["similarity"] for r in similar}
 
     # 3. Récupérer infos produit + popularité
+    # Fetch product info + popularity for candidates.
     candidates = db.query(
         """
         MATCH (p:Product)
@@ -381,13 +395,16 @@ def recommend_for_product(product_id: str, top_k: int = 5) -> list[dict]:
         sim = sim_map.get(r["nid"], 0.0)
 
         # normalisation similarité
+        # Normalize similarity into [0, 1).
         sim_norm = sim / (1 + sim)
 
         # popularité (degree)
         deg = r["degree"]
+        # Normalize popularity into [0, 1).
         pop_norm = deg / (1 + deg)
 
         # score final
+        # Final blended score.
         final = round(0.8 * sim_norm + 0.2 * pop_norm, 4)
 
         results.append({
@@ -401,24 +418,29 @@ def recommend_for_product(product_id: str, top_k: int = 5) -> list[dict]:
             "popularity_score":  round(pop_norm, 4),
         })
 
-    # 4. Tri
+    # 4) Sort by score and return top_k.
     results.sort(key=lambda x: x["score"], reverse=True)
 
     logger.info(f"recommend_for_product({product_id}): {len(results[:top_k])} résultats")
 
     return _clean(results[:top_k])
 
-# ─────────────────────────────────────────────────────────────────
-# TOP PRODUITS
-# ─────────────────────────────────────────────────────────────────
+################## TOP PRODUITS
 
 @timed_cache(ttl=300)
 def get_top_products(
-    method: str = "pagerank",
+    method: str = "combined",
     limit: int = 50,
     category: str | None = None,
     brand: str | None = None,
 ) -> list[dict]:
+    """
+    Return the top products ranked by a selected scoring method.
+
+    Supports pagerank, degree, betweenness, or a weighted combined score,
+    with optional category/brand filters and a cached response.
+    """
+    # Always require a rank to avoid null scores.
     filters = ["p.pagerank IS NOT NULL"]
     params: dict = {"limit": limit}
 
@@ -431,6 +453,7 @@ def get_top_products(
 
     where_clause = "WHERE " + " AND ".join(filters)
 
+    # Different scoring modes supported by the dashboard.
     score_expr = {
         "pagerank":    "coalesce(p.pagerank, 0.0)",
         "degree":      "coalesce(p.degree, 0.0)",
@@ -464,12 +487,15 @@ def get_top_products(
     return _clean(results)
 
 
-# ─────────────────────────────────────────────────────────────────
-# SEGMENTS CLIENTS (Louvain)
-# ─────────────────────────────────────────────────────────────────
+################## SEGMENTS CLIENTS (Louvain)
 
 @timed_cache(ttl=300)
-def get_segments(limit: int = 20) -> list[dict]:
+def get_segments(limit: Optional[int] = 20) -> list[dict]:
+    """
+    Retourne les informations des 5 premiers clients de chaque segment Louvain.
+    Utilisé pour deviner les les propriétées (démographiques et sex) entre eux.
+    """
+    # Louvain segments with small samples for preview.
     cypher = """
     MATCH (c:Customer)
     WHERE c.community IS NOT NULL
@@ -480,14 +506,18 @@ def get_segments(limit: int = 20) -> list[dict]:
         [m IN members | m.country][0..5] AS sample_countries,
         [m IN members | COALESCE(m.gender, m.Gender, m.sex, 'N/A')][0..5] AS sample_genders
     ORDER BY size DESC
-    LIMIT $limit
     """
-    results = db.query(cypher, {"limit": limit})
+    params: Dict[str, Any] = {}
+    if limit is not None and limit > 0:
+        cypher += "\n    LIMIT $limit\n    "
+        params["limit"] = limit
+    results = db.query(cypher, params)
     logger.info(f"get_segments(): {len(results)} segments")
     return _clean(results)
 
 
 def get_segment_customers(segment_id: int, limit: int = 20) -> list[dict]:
+    # Customers inside a segment, sorted by purchase count.
     cypher = """
     MATCH (c:Customer)
     WHERE c.community = $segment_id
@@ -508,12 +538,11 @@ def get_segment_customers(segment_id: int, limit: int = 20) -> list[dict]:
     return _clean(db.query(cypher, {"segment_id": segment_id, "limit": limit}))
 
 
-# ─────────────────────────────────────────────────────────────────
-# ANALYTICS
-# ─────────────────────────────────────────────────────────────────
+################## ANALYTICS
 
 @timed_cache(ttl=300)
 def get_category_insights() -> list[dict]:
+    # Category-level metrics for analytics charts.
     cypher = """
     // Étape 1 : stats d'achat par catégorie
     MATCH (c:Customer)-[r:PURCHASED]->(p:Product)
@@ -548,6 +577,7 @@ def get_category_insights() -> list[dict]:
 
 @timed_cache(ttl=300)
 def get_top_customers(limit: int = 20) -> list[dict]:
+    # Highest-spending customers
     cypher = """
     MATCH (c:Customer)-[r:PURCHASED]->(p:Product)
     WITH c,

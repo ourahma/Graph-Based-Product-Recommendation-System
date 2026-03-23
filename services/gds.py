@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 # ─────────────────────────────────────────────
 
 def projection_exists(name: str) -> bool:
+    # Check whether a GDS in-memory projection exists by name.
     try:
         result = db.query(
             "CALL gds.graph.exists($name) YIELD exists",
@@ -22,6 +23,7 @@ def projection_exists(name: str) -> bool:
 
 
 def drop_projection(name: str) -> None:
+    # Drop a GDS projection if it exists (safe cleanup).
     try:
         if projection_exists(name):
             db.query("CALL gds.graph.drop($name) YIELD graphName", {"name": name})
@@ -31,6 +33,7 @@ def drop_projection(name: str) -> None:
 
 
 def _serialize(result: list) -> Dict[str, Any]:
+    # Normalize results to JSON-friendly types (no NaN/Inf).
     if not result:
         return {"status": "aucun résultat retourné"}
     row = result[0]
@@ -53,6 +56,7 @@ def _get_customer_and_product_ids(limit: int = 100) -> tuple[list, list]:
     (triés par toInteger pour éviter le tri lexicographique des strings)
     et de tous leurs produits associés via PURCHASED ou REVIEWED.
     """
+    # Step 1: pick a deterministic customer subset.
     id_rows = db.query(
         """
         MATCH (c:Customer)
@@ -64,6 +68,7 @@ def _get_customer_and_product_ids(limit: int = 100) -> tuple[list, list]:
     )
     customer_ids = [r["nid"] for r in id_rows]
 
+    # Step 2: collect products linked to those customers.
     prod_rows = db.query(
         """
         MATCH (c:Customer)-[:PURCHASED|REVIEWED]->(p:Product)
@@ -79,6 +84,7 @@ def _get_customer_and_product_ids(limit: int = 100) -> tuple[list, list]:
 
 
 def get_subset_customer_ids(limit: int = 100) -> list:
+    # Uses numeric ordering to avoid lexicographic sort on strings.
     """Récupère les client_id (string) des {limit} premiers clients."""
     rows = db.query(
         """
@@ -102,6 +108,7 @@ def create_global_projection(customer_ids: list, product_ids: list, all_ids: lis
     Utilisée pour PageRank, Degree, Betweenness et stream similarité clients.
     Gardée active après le pipeline pour les appels stream à la demande.
     """
+    # Customers + Products with PURCHASED/REVIEWED edges.
     name = "global-customer-product"
     drop_projection(name)
 
@@ -145,6 +152,7 @@ def create_product_projection(customer_ids: list, product_ids: list, all_ids: li
     Projection bipartite Product ← Customer (PURCHASED inversé).
     Gardée active après le pipeline pour les appels stream similarité produits.
     """
+    # Product -> Customer bipartite graph for product similarity.
     name = "product-customer-bipartite"
     drop_projection(name)
 
@@ -182,6 +190,7 @@ def create_product_projection(customer_ids: list, product_ids: list, all_ids: li
 # ─────────────────────────────────────────────
 
 def run_pagerank() -> Dict[str, Any]:
+    # Compute and store PageRank on the global projection.
     result = db.query(
         """
         CALL gds.pageRank.write('global-customer-product', {
@@ -197,6 +206,7 @@ def run_pagerank() -> Dict[str, Any]:
 
 
 def run_degree_centrality() -> Dict[str, Any]:
+    # Compute and store degree centrality on the global projection.
     result = db.query(
         """
         CALL gds.degree.write('global-customer-product', {
@@ -210,6 +220,7 @@ def run_degree_centrality() -> Dict[str, Any]:
 
 
 def run_betweenness() -> Dict[str, Any]:
+    # Compute and store betweenness centrality on the global projection.
     result = db.query(
         """
         CALL gds.betweenness.write('global-customer-product', {
@@ -227,6 +238,7 @@ def run_betweenness() -> Dict[str, Any]:
 # STREAM SIMILARITÉ 
 # ─────────────────────────────────────────────
 def stream_similar_customers(customer_neo4j_id: int, top_k: int = 10) -> list[dict]:
+    # Stream similar customers from the global projection.
     try:
         result = db.query(
             """
@@ -258,6 +270,7 @@ def stream_similar_customers(customer_neo4j_id: int, top_k: int = 10) -> list[di
 
 
 def stream_similar_products(product_neo4j_id: int, top_k: int = 10) -> list[dict]:
+    # Stream similar products from the product projection.
     try:
         result = db.query(
             """
@@ -296,6 +309,7 @@ def create_cooccurrence_projection(customer_ids: list, all_ids: list) -> Dict[st
     Projection client-client via co-achats à la volée.
     Utilisée uniquement pour Louvain.
     """
+    # Customer-customer co-purchase graph used only for Louvain.
     name = "customer-cooccurrence"
     drop_projection(name)
 
@@ -325,6 +339,7 @@ def create_cooccurrence_projection(customer_ids: list, all_ids: list) -> Dict[st
 
 
 def run_louvain() -> Dict[str, Any]:
+    # Writes a community id on each Customer node in the subset.
     """Louvain — écrit c.community sur chaque Customer du subset."""
     result = db.query(
         """
@@ -348,19 +363,23 @@ def run_all_algorithms(limit: int = 10000) -> Dict[str, Any]:
     try:
         customer_ids, product_ids = _get_customer_and_product_ids(limit)
         all_ids = customer_ids + product_ids
+        # Pipeline runs on a deterministic subset for performance.
 
         # 1. Louvain — segmentation clients (projection séparée)
+        # Louvain step on customer co-occurrence graph.
         report["cooccurrence_projection"] = create_cooccurrence_projection(customer_ids, all_ids)
         report["louvain"]                 = run_louvain()
         drop_projection("customer-cooccurrence")
 
         # 2. Projection globale + centralités
+        # Centrality algorithms on the global projection.
         report["global_projection"] = create_global_projection(customer_ids, product_ids, all_ids)
         report["pagerank"]          = run_pagerank()
         report["degree"]            = run_degree_centrality()
         report["betweenness"]       = run_betweenness()
 
         # 3. Projection produits (gardée active pour stream)
+        # Product projection kept for product similarity streaming.
         report["product_projection"] = create_product_projection(customer_ids, product_ids, all_ids)
 
     except Exception as e:
@@ -383,6 +402,7 @@ def diagnose_customer(client_id: str) -> Dict[str, Any]:
     Diagnostic pour un client spécifique.
     """
     # Initialisation avec annotation explicite pour éviter l'inférence Dict[str, str]
+    # Collects diagnostics about existence, projection membership, and similarities.
     info: Dict[str, Any] = {}
     info["client_id"] = client_id
     
@@ -461,6 +481,7 @@ def diagnose_customer(client_id: str) -> Dict[str, Any]:
 
 
 def list_all_clients(limit: int = 20) -> list[dict]:
+    # Returns a compact list of customers with purchase counts.
     """
     Liste des premiers clients avec leurs stats.
     """
@@ -470,6 +491,7 @@ def list_all_clients(limit: int = 20) -> list[dict]:
         RETURN c.client_id AS client_id, c.name AS name, 
                COUNT { (c)-[:PURCHASED]->() } AS purchases
         ORDER BY toInteger(c.client_id)
+        LIMIT $limit
         """,
         {"limit": limit}
     )
@@ -477,6 +499,7 @@ def list_all_clients(limit: int = 20) -> list[dict]:
 
 
 def diagnose_duplicates() -> Dict[str, Any]:
+    # Detect duplicate Customer nodes sharing the same client_id.
     """
     Diagnostic des doublons de customers dans la base.
     Vérifie si chaque client_id a une seule node ou plusieurs.
@@ -503,6 +526,7 @@ def diagnose_duplicates() -> Dict[str, Any]:
 
 
 def customer_stats() -> Dict[str, Any]:
+    # High-level counts used for sanity checks.
     """
     Statistiques globales sur les customers et les purchases.
     """
@@ -556,6 +580,7 @@ def customer_stats() -> Dict[str, Any]:
 
 
 def list_all_products(limit: int = 100) -> list[dict]:
+    # Returns products with purchase/review counts (most popular first).
     """
     Liste des produits avec leurs statistiques.
     """
@@ -574,6 +599,7 @@ def list_all_products(limit: int = 100) -> list[dict]:
 
 
 def pipeline_graph_info() -> Dict[str, Any]:
+    # Inspect which in-memory GDS graphs currently exist.
     """
     Info sur les projections GDS actuellement actives.
     """
